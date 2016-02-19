@@ -56,6 +56,38 @@ def decode(text):
 
 #print relevancy.score(api_title, title)
 
-import relevancy
+#import relevancy
 
-print relevancy.score('Грань будущего', 'Гран будусчего')
+#print relevancy.score('Грань будущего', 'Гран будусчего')
+
+#from translit import translit
+
+#t = u'O chem govoryat mujchiny'
+
+#title = translit(t)
+#print title
+
+#from difflib import SequenceMatcher
+#a = SequenceMatcher(None,u'O чем говорят муйчины', u'О чём говорят мужчины')
+#print a.ratio()
+
+import unicodedata
+
+def detect_cyrillic(string, pos=0.5):
+    string = unicode(string)
+    cc = 0
+    for char in string:
+        if 'CYRILLIC' in unicodedata.name(char):
+            cc += 1
+    if float(cc) / float(len(string)) >= pos:
+        #LOG
+        return True
+    else:
+        #LOG
+        return False
+
+
+
+text = u'ddмммdd'
+
+print detect_cyrillic(text)

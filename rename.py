@@ -4,8 +4,13 @@
 import requests
 import sys
 import re
-import relevancy
-from transliterate import translit
+from difflib import SequenceMatcher
+from translit import translit
+import unicodedata
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
 
 API_ADDR = 'http://api.kinopoisk.cf'
 
@@ -55,7 +60,12 @@ dir=['[2007]_I_Am_Legend_720p_Blu-ray.mkv                                       
 'The Hobbit An Unexpected Journey 2012 BDrip-AVC Froloff777.mkv                         ',
 'Tonari no Totoro.1988.720p.BluRay.x264-LEONARDO_[scarabey.org].mkv                     ',
 'Ya.Robot.2004.DUAL.BDRip.x264.-HELLYWOOD.mkv                                           ',
-'Х1.2000.720p.BluRay.x264-LEONARDO_[scarabey.org].mkv                                   ']
+'Дракула.mkv                                                                            ',
+'Дух времени (Zeitgeist) (2007).avi                                                     ',
+'Не грози Южному Централу, попивая сок у себя в квартале [Goblin].avi                   ',
+'Сумерки. Сага. Затмение_[scarabey.org]                                                 ',
+'Х1.2000.720p.BluRay.x264-LEONARDO_[scarabey.org].mkv                                   ',
+'Шерлок Холмс                                                                           ']
 
 def curl(url, params=None):
     """
@@ -125,22 +135,30 @@ def get_film_by_torrent_url(url):
 
 
 def search_films(keyword):
+    keyword = keyword.encode('utf-8')
+    logging.debug('Search movies using {} keyword'.format(keyword))
     response = api_curl('{0}/searchFilms'.format(API_ADDR), {'keyword': keyword})
     try:
         if response['pagesCount'] == 0:
+            logging.info('No results found')
             return []
         result = response['searchFilms']
-    except KeyError:
-        print 'API error'
-        print response
+        logging.debug('{} movies found'.format(len(result)))
+        for p in result: logging.info('Found movies id: {}'.format(p['id']))
+    except KeyError as e:
+        logging.error('API response parsing error: {}'.format(e))
+        logging.error('Response: {}'.format(response))
         sys.exit(1)
     return result
 
 
 def year_filter(film_list, year, range=0):
     year = int(year)
+    logging.debug('Filtering out movies by year {} with year dispersion {}'.format(year, range))
+    logging.debug('{} movies in'.format(len(film_list)))
     film_list = filter(lambda i: 'year' in i, film_list)
     film_list = filter(lambda i: year - range <= int(i['year']) <= year + range, film_list)
+    logging.debug('{} movies out'.format(len(film_list)))
     return film_list
 
 
@@ -203,7 +221,9 @@ def wordsFilter(words):
                 'org',
                 'mp4',
                 'rus',
-                'eng']
+                'eng',
+                'avc',
+                'dts']
     for regexp in rm_list:
         words = filter(lambda word: not re.search(regexp, word, re.IGNORECASE), words)
     #if len(words) > 1:
@@ -213,24 +233,25 @@ def wordsFilter(words):
 
 
 def get_score(api_title,title):
-    return relevancy.score(api_title, title)
+    obj = SequenceMatcher(None, api_title, title)
+    return obj.ratio()
+    #return relevancy.score(api_title, title)
 
-def compare_names(words,film,lang):
-    pass
 
-def find_best_match(title,tr=False):
+def find_film_results(words, year,lang='en'):
     result_films = []
-    year = get_year_from_string(title)
-    words = split_string(title)
-    words = wordsFilter(words)
-    if tr:
-        words = [translit(t, 'ru') for t in words ]
+    if lang == 'tr':
+        words = [translit(t) for t in words]
     films = search_films('_'.join(words))
-    films = year_filter(films, year)
-    films = non_movie_filter(films)
-    print 'words:', ', '.join(words)
+    films_filtered = year_filter(films, year)
+    # TODO make max range global variable
+    if not films_filtered:
+        films_filtered = year_filter(films, year, range=1)
+    films = non_movie_filter(films_filtered)
     for film in films:
-        if tr:
+        if lang == 'tr':
+            film_name = film['nameRU']
+        elif lang == 'ru':
             film_name = film['nameRU']
         else:
             film_name = film['nameEN']
@@ -240,11 +261,45 @@ def find_best_match(title,tr=False):
     return result_films
 
 
-for title in dir:
-    print '###{}###'.format(title)
-    en_films = find_best_match(title)
-    tr_films = find_best_match(title,tr=True)
-    films = tr_films+en_films
-    for i in films:
-        print i['nameEN'], i['rel_score']
+def get_best_result(title):
+    title = title.decode('utf-8')
+    year = get_year_from_string(title)
+    words = split_string(title)
+    words = wordsFilter(words)
+    if detect_cyrillic(''.join(words)):
+        lg_films = find_film_results(words, year, lang='ru')
+        #for p in lg_films: logging.info('movie found matching RU title: {} (score:{})'.format(p['nameRU'],p['rel_score']))
+    else:
+        lg_films = find_film_results(words, year)
+        #for p in lg_films: logging.info('movie found matching EN title: {} (score:{})'.format(p['nameEN'],p['rel_score']))
+    tr_films = find_film_results(words, year, lang='tr')
+    #for p in lg_films: logging.info('movie found matching RU title with transliteration: {} (score:{})'.format(p['nameRU'],p['rel_score']))
+    result_films = tr_films+lg_films
+    if result_films:
+        result = max(result_films, key=lambda film: film['rel_score'])
+    else:
+        result = None
+    return result
 
+def detect_cyrillic(string, pos=0.5):
+    string = unicode(string)
+    cc = 0
+    for char in string:
+        if 'CYRILLIC' in unicodedata.name(char):
+            cc += 1
+    if float(cc) / float(len(string)) >= pos:
+        #LOG
+        return True
+    else:
+        #LOG
+        return False
+
+
+#for title in dir:
+#    print '###', title, '###'
+#    if get_best_result(title):
+#        print generate_title(get_best_result(title))
+#    else:
+#        print '[RENAME_FAILED]_'+title
+
+print get_best_result('Idiocracy.2006.720p.HDTV.x264.dts.ac3-Skazhutin.mkv                                    ')
