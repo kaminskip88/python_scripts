@@ -9,10 +9,14 @@ from translit import translit
 import unicodedata
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
-
+logging.basicConfig(level=logging.DEBUG,
+                    #filename='myscript.log',
+                    format='%(asctime)s %(levelname)s %(message)s'
+                    )
 
 API_ADDR = 'http://api.kinopoisk.cf'
+YEAR_PENALTY = 0.2
+
 
 dir=['[2007]_I_Am_Legend_720p_Blu-ray.mkv                                                ',
 '[2014]_Gran_buduschego_BDRip-AVC.mkv                                                   ',
@@ -145,14 +149,17 @@ def search_films(keyword):
         result = response['searchFilms']
         logging.debug('{} movies found'.format(len(result)))
         for p in result: logging.info('Found movies id: {}'.format(p['id']))
-    except KeyError as e:
+    except (KeyError, TypeError) as e:
         logging.error('API response parsing error: {}'.format(e))
         logging.error('Response: {}'.format(response))
-        sys.exit(1)
+        result = None
     return result
 
 
 def year_filter(film_list, year, range=0):
+    if not year:
+        logging.debug('No year specified. Skipping')
+        return film_list
     year = int(year)
     logging.debug('Filtering out movies by year {} with year dispersion {}'.format(year, range))
     logging.debug('{} movies in'.format(len(film_list)))
@@ -163,18 +170,24 @@ def year_filter(film_list, year, range=0):
 
 
 def non_movie_filter(film_list):
+    logging.debug('Filtering out movies by keywords')
+    logging.debug('{} movies in'.format(len(film_list)))
     filter_list = [u'(видео)', u'(ТВ)']
     for string in filter_list:
         film_list = filter(lambda i: not string in i['nameEN'], film_list)
+        logging.debug('keyword: {}, {} films after filtering'.format(string.encode('utf-8'), len(film_list)))
     return film_list
 
 
 def get_year_from_string(string):
+    logging.debug('Searching for year in title: {}'.format(string.encode('utf-8')))
     result = re.search("[1-2]\d{3}", string)
     if result:
+        logging.debug('Year found: {}'.format(result))
         return result.group(0)
     else:
-        return '1900'  # temporarily
+        logging.warn('No year found in title')
+        return None
 
 
 def split_string(string):
@@ -184,15 +197,17 @@ def split_string(string):
                    ']',
                    '(',
                    ')']
+    logging.debug('Splitting title: {}'.format(string.encode('utf-8')))
     for i, j in replace_dict.iteritems():
         string = string.replace(i, j)
     for i in remove_list:
         string = string.replace(i, '')
     result = string.split('_')
-    return filter(lambda a: a, result)
+    return filter(lambda a: a, result)  # filter empty values
 
 
 def wordsFilter(words):
+    logging.debug('Applying filters')
     rm_list = ['scarabey',
                 'Blu.?ray',
                 '0ptimus',
@@ -231,22 +246,28 @@ def wordsFilter(words):
     return words
 
 
-
-def get_score(api_title,title):
+def get_score(api_title, title):
     obj = SequenceMatcher(None, api_title, title)
-    return obj.ratio()
-    #return relevancy.score(api_title, title)
+    logging.debug('Match "{}" against "{}"'.format(api_title.encode('utf-8'), title.encode('utf-8')))
+    return int(obj.ratio())
+    # return relevancy.score(api_title, title)
 
 
-def find_film_results(words, year,lang='en'):
+def find_film_results(words, year, lang='en'):
+    logging.debug('Searching for film using language {}'.format(lang.capitalize()))
+    year_penalty = 0
     result_films = []
     if lang == 'tr':
         words = [translit(t) for t in words]
     films = search_films('_'.join(words))
+    if not films:
+        return None
     films_filtered = year_filter(films, year)
     # TODO make max range global variable
     if not films_filtered:
+        logging.debug('No movies found for matching year {}'.format(year))
         films_filtered = year_filter(films, year, range=1)
+        year_penalty = YEAR_PENALTY
     films = non_movie_filter(films_filtered)
     for film in films:
         if lang == 'tr':
@@ -256,6 +277,8 @@ def find_film_results(words, year,lang='en'):
         else:
             film_name = film['nameEN']
         score = get_score(film_name, ' '.join(words))
+        score -= year_penalty
+        logging.debug('Score: {}'.format(score))
         film['rel_score'] = score
         result_films.append(film)
     return result_films
@@ -268,18 +291,19 @@ def get_best_result(title):
     words = wordsFilter(words)
     if detect_cyrillic(''.join(words)):
         lg_films = find_film_results(words, year, lang='ru')
-        #for p in lg_films: logging.info('movie found matching RU title: {} (score:{})'.format(p['nameRU'],p['rel_score']))
     else:
         lg_films = find_film_results(words, year)
-        #for p in lg_films: logging.info('movie found matching EN title: {} (score:{})'.format(p['nameEN'],p['rel_score']))
     tr_films = find_film_results(words, year, lang='tr')
-    #for p in lg_films: logging.info('movie found matching RU title with transliteration: {} (score:{})'.format(p['nameRU'],p['rel_score']))
-    result_films = tr_films+lg_films
+    try:
+        result_films = tr_films+lg_films
+    except TypeError:
+        return None
     if result_films:
         result = max(result_films, key=lambda film: film['rel_score'])
     else:
         result = None
     return result
+
 
 def detect_cyrillic(string, pos=0.5):
     string = unicode(string)
@@ -288,10 +312,10 @@ def detect_cyrillic(string, pos=0.5):
         if 'CYRILLIC' in unicodedata.name(char):
             cc += 1
     if float(cc) / float(len(string)) >= pos:
-        #LOG
+        logging.debug('String "{}" contains more than {}% cyrillic symbols and determined cyrillic'.format(string.encode('utf-8'), pos * 100))
         return True
     else:
-        #LOG
+        logging.debug('String "{}" contains less than {}% cyrillic symbols and determined non-cyrillic'.format(string.encode('utf-8'), pos * 100))
         return False
 
 
@@ -302,4 +326,5 @@ def detect_cyrillic(string, pos=0.5):
 #    else:
 #        print '[RENAME_FAILED]_'+title
 
-print get_best_result('Idiocracy.2006.720p.HDTV.x264.dts.ac3-Skazhutin.mkv                                    ')
+print get_best_result('Mir.jrskogo.perioda.2015.x264.BDRip.(AVC).mkv                                          ')
+
