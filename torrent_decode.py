@@ -48,46 +48,14 @@ def decode(text):
         raise SyntaxError("syntax error")
     return data
 
-#data = open("C:\cygwin\home\Piotr_Kaminski/test.torrent", "rb").read()
+api_key = 'd9a25ef6b180e7989d91669153624afe'
 
-#torrent = decode(data)
-
-#print torrent['publisher-url']
-
-#print relevancy.score(api_title, title)
-
-#import relevancy
-
-#print relevancy.score('Грань будущего', 'Гран будусчего')
-
-#from translit import translit
-
-#t = u'O chem govoryat mujchiny'
-
-#title = translit(t)
-#print title
-
-#from difflib import SequenceMatcher
-#a = SequenceMatcher(None,u'O чем говорят муйчины', u'О чём говорят мужчины')
-#print a.ratio()
-
-import unicodedata
-
-def detect_cyrillic(string, pos=0.5):
-    string = unicode(string)
-    cc = 0
-    for char in string:
-        if 'CYRILLIC' in unicodedata.name(char):
-            cc += 1
-    if float(cc) / float(len(string)) >= pos:
-        #LOG
-        return True
-    else:
-        #LOG
-        return False
+import tmdbsimple as tmdb
+tmdb.API_KEY = api_key
+search = tmdb.Search()
+response = search.movie(query='юрского', language='ru', year='2015')
+for s in search.results:
+    print s['title'], s['id'], s['release_date']
 
 
 
-text = u'ddмммdd'
-
-print detect_cyrillic(text)
