@@ -21,7 +21,7 @@ search_objects = {
 match_pattern = '''<a href=["']([^'"]+)["'](\s*download="[^"]*")?>{0}</a>'''
 site_url = 'http://9700a.neoline.ru/'
 state_file = './.neoline.state'
-dl_target_location = './'
+dl_target_location = '/storage/download/NEOLINE/'
 
 def curl(url, params=None):
     """
