@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 from string import maketrans
+import itertools
 
 literal_mapping = (
-    u"abvgdezijklmnoprstufhc'y'",
-    u"абвгдезийклмнопрстуфхцъыь"
+    u"abvdezklmnoprstufhc'",
+    u"абвдезклмнопрстуфхць"
     )
 
 complex_mapping = {
@@ -20,11 +21,13 @@ complex_mapping = {
     u"yu": u"ю",
 }
 
-#ambiguity_mapping = {
-#    u"g": [u"г", u"ж"],
-#    u"j": [u"ж", u"й"],
-#    u"y": [u"й", u"ы"],
-#}
+ambiguity_mapping = {
+    u"g": [u"г", u"ж"],
+    u"j": [u"ж", u"й"],
+    u"y": [u"й", u"ы"],
+    u"'": [u"ь", u"ъ"],
+    u"i": [u"и", u"ы"]
+}
 
 class Transliterate(object):
 
@@ -35,7 +38,7 @@ class Transliterate(object):
         translate_table = dict(zip(table_in, table_out))
         self.literal_mapping = translate_table
         self.complex_mapping = complex_mapping
-        #self.ambiguity_mapping = ambiguity_mapping
+        self.ambiguity_mapping = ambiguity_mapping
         self.complex_mapping_keys = self.complex_mapping.keys()
 
     def translit(self, string):
@@ -46,12 +49,21 @@ class Transliterate(object):
                 string = string.replace(rule, self.complex_mapping[rule])
         if self.literal_mapping:
             string = string.translate(self.literal_mapping)
-        #if self.ambiguity_mapping:
-        #    for ambiguity_char, values in self.ambiguity_mapping.iteritems():
-        #        if ambiguity_char in string:
-        #            for value in values:
-        #                result.append(string.replace(ambiguity_char, value))
-        return string
+        if self.ambiguity_mapping:
+            result_list = []
+            for char in string:
+                char_list = []
+                if char in self.ambiguity_mapping.keys():
+                    for val in self.ambiguity_mapping[char]:
+                        char_list.append(val)
+                    result_list.append(char_list)
+                else:
+                    result_list.append(list(char))
+            for i in list(itertools.product(*result_list)):
+                result.append(''.join(i))
+        else:
+            return result.append(string)
+        return result
 
 
 def translit(string):
