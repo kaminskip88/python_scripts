@@ -14,7 +14,7 @@ search_objects = {
                         'link':''
                     },
                     'DB':{
-                        'name':'Обновление GPS-базы',
+                        'name':'Обновление GPS-базы.*',
                         'link':''
                     }
                 }
